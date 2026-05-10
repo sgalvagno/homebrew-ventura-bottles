@@ -38,7 +38,7 @@ jobs:
             git show "${hash}~1:Formula/${letter}/${pkg}.rb" > "/tmp/${pkg}.rb"
 
             # Ne garde que la ligne ventura: dans le bloc bottle do
-            python3 - "$GITHUB_WORKSPACE/.github/scripts/filter_bottle.py" "$pkg"
+            python3 "$GITHUB_WORKSPACE/.github/scripts/filter_bottle.py" "$pkg"
             cp "/tmp/${pkg}.rb" "$GITHUB_WORKSPACE/Formula/${pkg}.rb"
           done < "$GITHUB_WORKSPACE/packages.txt"
 
