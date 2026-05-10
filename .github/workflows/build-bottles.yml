@@ -1,0 +1,32 @@
+name: Build Homebrew Bottles for Ventura
+
+on:
+  workflow_dispatch:
+    inputs:
+      formula:
+        description: 'Packages à compiler pour macOS Ventura (ex: wget,curl,ffmpeg)'
+        required: true
+
+jobs:
+  build:
+    runs-on: macos-13        # Runner macOS 13 Ventura natif
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Homebrew dependencies
+        run: |
+          export HOMEBREW_NO_AUTO_UPDATE=1
+          brew install --build-bottle ${{ github.event.inputs.formula }}
+
+      - name: Create bottle
+        run: |
+          brew bottle ${{ github.event.inputs.formula }} --json
+          ls *.tar.gz *.json
+
+      - name: Upload bottle as Release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: bottles-${{ github.run_number }}
+          files: |
+            *.bottle.tar.gz
+            *.json
