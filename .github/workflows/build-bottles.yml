@@ -8,15 +8,31 @@ on:
 
 jobs:
   build:
-    #runs-on: macos-13 github ne fourni plus de runner macos 13
     runs-on: [self-hosted, macOS, X64, ventura]
     steps:
       - uses: actions/checkout@v4
 
-      - name: Clone homebrew-core (sans blobs)
+      - name: Restore homebrew-core cache
+        uses: actions/cache@v4
+        id: cache-homebrew-core
+        with:
+          path: /tmp/homebrew-core
+          key: homebrew-core-${{ runner.os }}-${{ hashFiles('packages.txt') }}
+          restore-keys: |
+            homebrew-core-${{ runner.os }}-
+
+      - name: Clone homebrew-core (fork)
+        if: steps.cache-homebrew-core.outputs.cache-hit != 'true'
         run: |
+          rm -rf /tmp/homebrew-core
           git clone --filter=blob:none --no-checkout \
-            https://github.com/Homebrew/homebrew-core.git /tmp/homebrew-core
+            https://github.com/sgalvagno/homebrew-core.git /tmp/homebrew-core
+
+      - name: Update homebrew-core
+        if: steps.cache-homebrew-core.outputs.cache-hit == 'true'
+        run: |
+          cd /tmp/homebrew-core
+          git fetch origin
 
       - name: Extraire les formules avec bottle ventura
         run: |
@@ -48,7 +64,9 @@ jobs:
           while IFS= read -r pkg || [[ -n "$pkg" ]]; do
             [[ "$pkg" =~ ^#.*$ || -z "$pkg" ]] && continue
             brew install --build-bottle "./Formula/${pkg}.rb" && \
-            brew bottle "$pkg" --json || echo "FAILED: $pkg"
+            brew bottle "$pkg" \
+              --root-url "https://github.com/sgalvagno/homebrew-ventura-bottles/releases/download/bottles-${{ github.run_number }}" \
+              --json || echo "FAILED: $pkg"
           done < packages.txt
 
       - name: Publier en Release
@@ -58,4 +76,5 @@ jobs:
           files: |
             *.bottle.tar.gz
             *.json
+
 
