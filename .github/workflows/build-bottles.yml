@@ -1,32 +1,78 @@
-name: Build Homebrew Bottles for Ventura
+name: Build Bottles for Ventura
 
 on:
+  push:
+    paths:
+      - 'packages.txt'
   workflow_dispatch:
-    inputs:
-      formula:
-        description: 'Packages à compiler pour macOS Ventura (ex: wget,curl,ffmpeg)'
-        required: true
 
 jobs:
   build:
-    runs-on: macos-13        # Runner macOS 13 Ventura natif
+    runs-on: macos-13
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Homebrew dependencies
+      - name: Clone homebrew-core (sans blobs)
+        run: |
+          git clone --filter=blob:none --no-checkout \
+            https://github.com/Homebrew/homebrew-core.git /tmp/homebrew-core
+
+      - name: Extraire les formules avec bottle ventura
+        run: |
+          cd /tmp/homebrew-core
+          while IFS= read -r pkg || [[ -n "$pkg" ]]; do
+            [[ "$pkg" =~ ^#.*$ || -z "$pkg" ]] && continue
+            letter="${pkg:0:1}"
+
+            # Trouve le dernier commit avec ventura pour ce package
+            hash=$(git --no-pager log --oneline -S 'ventura:' \
+              -- "Formula/${letter}/${pkg}.rb" | head -1 | awk '{print $1}')
+
+            if [[ -z "$hash" ]]; then
+              echo "SKIP: $pkg — pas de bottle ventura trouvée"
+              continue
+            fi
+
+            # Extrait la formule depuis le commit parent
+            git show "${hash}~1:Formula/${letter}/${pkg}.rb" > "/tmp/${pkg}.rb"
+
+            # Ne garde que la ligne ventura: dans le bloc bottle do
+            python3 - "$pkg" <<'EOF'
+import re, sys
+pkg = sys.argv[1]
+with open(f'/tmp/{pkg}.rb', 'r') as f:
+    content = f.read()
+
+# Remplace le bloc bottle do par une version ventura seulement
+def replace_bottle(m):
+    lines = m.group(0).split('\n')
+    ventura_line = next((l for l in lines if 'ventura:' in l and 'arm64' not in l), None)
+    if ventura_line:
+        return f'  bottle do\n{ventura_line}\n  end'
+    return m.group(0)
+
+content = re.sub(r'  bottle do.*?  end', replace_bottle, content, flags=re.DOTALL)
+with open(f'/tmp/{pkg}.rb', 'w') as f:
+    f.write(content)
+print(f'OK: {pkg}')
+EOF
+            cp "/tmp/${pkg}.rb" "$GITHUB_WORKSPACE/Formula/${pkg}.rb"
+          done < "$GITHUB_WORKSPACE/packages.txt"
+
+      - name: Compiler les bottles
         run: |
           export HOMEBREW_NO_AUTO_UPDATE=1
-          brew install --build-bottle ${{ github.event.inputs.formula }}
+          while IFS= read -r pkg || [[ -n "$pkg" ]]; do
+            [[ "$pkg" =~ ^#.*$ || -z "$pkg" ]] && continue
+            brew install --build-bottle "./Formula/${pkg}.rb" && \
+            brew bottle "$pkg" --json || echo "FAILED: $pkg"
+          done < packages.txt
 
-      - name: Create bottle
-        run: |
-          brew bottle ${{ github.event.inputs.formula }} --json
-          ls *.tar.gz *.json
-
-      - name: Upload bottle as Release asset
+      - name: Publier en Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: bottles-${{ github.run_number }}
           files: |
             *.bottle.tar.gz
             *.json
+
