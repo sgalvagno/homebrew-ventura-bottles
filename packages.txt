@@ -1,3 +1,4 @@
-wget
-curl
+#wget
+#curl
 # trigger ..
+jadx
