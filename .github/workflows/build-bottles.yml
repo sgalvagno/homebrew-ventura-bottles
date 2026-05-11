@@ -63,8 +63,8 @@ jobs:
           export HOMEBREW_NO_AUTO_UPDATE=1
           while IFS= read -r pkg || [[ -n "$pkg" ]]; do
             [[ "$pkg" =~ ^#.*$ || -z "$pkg" ]] && continue
-            brew install --build-bottle "./Formula/${pkg}.rb" && \
-            brew bottle "$pkg" \
+            brew install --build-bottle sgalvagno/ventura-bottles/${pkg}.rb && \
+            brew bottle sgalvagno/ventura-bottles/$pkg \
               --root-url "https://github.com/sgalvagno/homebrew-ventura-bottles/releases/download/bottles-${{ github.run_number }}" \
               --json || echo "FAILED: $pkg"
           done < packages.txt
